@@ -4,27 +4,133 @@ output:
   html_document:
     keep_md: true
 ---
+### Introduction
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the “quantified self” movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.  
 
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
 
-## Loading and preprocessing the data
-A1
-A2
+### Data
 
-## What is mean total number of steps taken per day?
-B1
-B2
-B3
+The data for this assignment can be downloaded from the course web site:  
 
-## What is the average daily activity pattern?
-C1
-C2
+* Dataset: [Activity monitoring data [52K]](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip)  
 
-## Imputing missing values
-D1
-D2
-D3
-D4
+The variables included in this dataset are:  
 
-## Are there differences in activity patterns between weekdays and weekends?
-E1
-E2
+* __steps__: Number of steps taking in a 5-minute interval (missing values are coded as NA)  
+* __date__: The date on which the measurement was taken in YYYY-MM-DD format  
+* __interval__: Identifier for the 5-minute interval in which measurement was taken  
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of 17,568 observations in this dataset.  
+
+### Loading and preprocessing the data
+```{r echo=TRUE}
+amd   <- read.csv("./activity.csv", header = TRUE)
+amd$h <- amd$interval %/% 100
+amd$m <- amd$interval - amd$h * 100
+amd$d <- as.POSIXct(paste(as.character(amd$date),
+                         paste(sprintf("%2.2d",amd$h),
+                               sprintf("%2.2d", amd$m), sep = ":")),
+                   format = "%Y-%m-%d %H:%M")
+library(dplyr, warn.conflicts = FALSE)
+amd.days <- amd %>%
+        group_by(date) %>%
+        summarize(steps.sum = sum(steps, na.rm = TRUE),
+                  steps.av  = mean(steps, na.rm = TRUE),
+                  steps.med = median(steps, na.rm = TRUE))
+```
+
+### What is mean total number of steps taken per day?  
+
+For this part of the assignment, we will ignore the missing values in the dataset.  
+A histogram of the total number of steps taken each day:  
+```{r}
+hist(amd.days$steps.sum, 25, 
+     main = "Total number of steps taken each day",
+     xlab = "Steps each day")
+```
+
+The mean and median of the total number of steps taken per day:  
+```{r}
+print(mean(amd.days$steps.sum))
+print(median(amd.days$steps.sum))
+```
+
+### What is the average daily activity pattern?  
+
+A time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis):  
+
+```{r}
+amd.times <- amd %>%
+        group_by(h, m) %>%
+        summarize(steps.av  = mean(steps,   na.rm = TRUE),
+                  steps.med = median(steps, na.rm = TRUE))
+amd.times$ts <- as.ts(amd.times$steps.av)
+plot(amd.times$ts, 
+     xlab = "Interval", ylab = "Steps", 
+     main = "Number of steps averaged across all days")
+```
+
+5-minute interval, on average across all the days in the dataset, containing the maximum number of steps:  
+
+```{r}
+print(unlist(amd.times[which.max(amd.times$ts), 1:3]))
+```
+
+### Imputing missing values
+The total number of missing values in the dataset (i.e. the total number of rows with NAs):  
+```{r}
+print(sum(!complete.cases(amd)))
+```
+
+Replacing each NAs by its period median:  
+```{r}
+amd.new <- amd
+for (i in (1 : nrow(amd.new))) {
+        if (is.na(amd.new$steps[i])) {
+                j <- amd.new$h[i] * 12 + amd.new$m[i] / 5 + 1
+                amd.new$steps[i] <- amd.times$steps.med[j]
+        }
+}
+amd.days <- amd.new %>%
+        group_by(date) %>%
+        summarize(steps.sum = sum(steps, na.rm = TRUE),
+                  steps.av  = mean(steps, na.rm = TRUE),
+                  steps.med = median(steps, na.rm = TRUE))
+```
+
+A histogram of the total number of steps taken each day:  
+```{r}
+hist(amd.days$steps.sum, 25, 
+     main = "Total number of steps (NAs imputed)",
+     xlab = "Steps each day")
+```
+
+The mean and median total number of steps taken per day:  
+```{r}
+print(mean(amd.days$steps.sum))
+print(median(amd.days$steps.sum))
+```
+The value of median of the total number of steps taken per day of the imputed data is identical to that of initial dataset because of the imputation method chosen. The difference in mean values is less than 2%.  
+
+### Are there differences in activity patterns between weekdays and weekends?  
+
+Creating a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day:
+```{r}
+amd$wday <- factor(x = "weekday", levels = c("weekday", "weekend"))
+amd$wday[weekdays(amd$d) == "Saturday" |
+        weekdays(amd$d) == "Sunday"] <- "weekend"
+act2 <- lapply(split(amd, amd$wday), function(x) {
+                x %>% group_by(h, m) %>%
+                        summarize(av  = mean(steps, na.rm = TRUE))
+                })
+```
+
+A panel plot containing a time series plot of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis):
+```{r}
+par(mfrow = c(2, 1))
+plot(act2$weekday$av, main = "Average number of steps on Weekdays",
+     type = "l", xlab = "", ylab = "steps", col = "blue")
+plot(act2$weekend$av, main = "Average number of steps on Weekends", 
+     type = "l", xlab = "", ylab = "steps", col = "red")
+```
